@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "flax>=0.12.7",
+    "ipython>=9.14.0",
     "jax>=0.10.1",
     "optax>=0.2.8",
+    "tiktoken>=0.13.0",
 ]
 
 
