@@ -1,7 +1,16 @@
 [project]
 name = "jax-gpt2-from-scratch"
 version = "0.1.0"
-description = "Add your description here"
+description = "An implemention of the GPT-2 architecture using JAX"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "jax>=0.10.1",
+]
+
+
+[project.optional-dependencies]
+cuda13 = [
+    "jax[cuda13]>=0.10.1",
+]
+
