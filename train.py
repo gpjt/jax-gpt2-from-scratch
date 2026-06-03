@@ -3,11 +3,22 @@ from pathlib import Path
 
 import click
 
+from huggingface_hub import snapshot_download
+
 from flax import nnx
 import optax
 
 from checkpointing import save_checkpoint
 from gpt import GPTModel
+
+
+def download_dataset(dataset_dir, dataset_name):
+    snapshot_download(
+        f"{dataset_name}",
+        repo_type="dataset",
+        local_dir=dataset_dir,
+        allow_patterns="*"
+    )
 
 
 def train(run_dir, model, optimizer):
@@ -16,7 +27,8 @@ def train(run_dir, model, optimizer):
 
 @click.command()
 @click.argument("run")
-def main(run):
+@click.argument("datasets_dir_path")
+def main(run, datasets_dir_path):
     run_dir = Path(__file__).resolve().parent / "runs" / run
     if not run_dir.is_dir():
         raise Exception(f"Could not find run dir {run_dir}")
@@ -32,6 +44,15 @@ def main(run):
         raise Exception(f"Could not find train config in {train_conf_file}")
     with open(train_conf_file, "r") as f:
         train_conf = json.load(f)
+
+    datasets_dir = Path(datasets_dir_path)
+    dataset_name = train_conf["dataset"]
+    dataset_dir = datasets_dir / dataset_name
+    if not datasets_dir.exists():
+        datasets_dir.mkdir()
+    if not datasets_dir.is_dir():
+        raise Exception(f"{datasets_dir_path} is not a directory")
+    download_dataset(dataset_dir, dataset_name)
 
     rngs = nnx.Rngs(42)
     model = GPTModel(
