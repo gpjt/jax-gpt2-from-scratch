@@ -5,6 +5,7 @@ description = "An implemention of the GPT-2 architecture using JAX"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "click>=8.4.1",
     "flax>=0.12.7",
     "ipython>=9.14.0",
     "jax>=0.10.1",
