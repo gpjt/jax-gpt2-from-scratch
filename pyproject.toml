@@ -9,6 +9,7 @@ dependencies = [
     "ipython>=9.14.0",
     "jax>=0.10.1",
     "optax>=0.2.8",
+    "safetensors>=0.7.0",
     "tiktoken>=0.13.0",
 ]
 
