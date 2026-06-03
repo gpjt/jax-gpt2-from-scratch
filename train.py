@@ -4,9 +4,14 @@ from pathlib import Path
 import click
 
 from flax import nnx
+import optax
 
 from checkpointing import save_checkpoint
 from gpt import GPTModel
+
+
+def train(run_dir, model, optimizer):
+    save_checkpoint(run_dir, "checkpoint-test", model)
 
 
 @click.command()
@@ -39,7 +44,17 @@ def main(run):
         drop_rate=train_conf["drop_rate"],
         rngs=rngs,
     )
-    save_checkpoint(run_dir, "checkpoint-test", model)
+
+    optimizer = nnx.Optimizer(
+        model,
+        optax.adamw(
+            learning_rate=train_conf["learning_rate"],
+            weight_decay=train_conf["weight_decay"],
+        ),
+        wrt=nnx.Param
+    )
+
+    train(run_dir, model, optimizer)
 
 
 if __name__ == "__main__":
