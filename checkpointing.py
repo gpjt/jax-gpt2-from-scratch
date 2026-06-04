@@ -28,7 +28,7 @@ def save_checkpoint(
     flat_state = nnx.to_flat_state(model_state)
     simple_dict = {}
     for tuple_key, array in flat_state:
-        key = ".".join(list(tuple_key))
+        key = ".".join(str(key) for key in tuple_key)
         simple_dict[key] = array
 
     st_save_file(simple_dict, checkpoint_dir / "model.safetensors")
