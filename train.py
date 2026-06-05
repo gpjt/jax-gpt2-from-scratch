@@ -5,8 +5,10 @@ import click
 
 from huggingface_hub import snapshot_download
 
-from flax import nnx
+import jax
 import optax
+from flax import nnx
+from safetensors.flax import load_file
 
 from checkpointing import save_checkpoint
 from gpt import GPTModel
@@ -54,6 +56,11 @@ def main(run, datasets_dir_path):
         raise Exception(f"{datasets_dir_path} is not a directory")
     download_dataset(dataset_dir, dataset_name)
 
+    with jax.default_device(jax.devices("cpu")[0]):
+        split = "train"
+        full_dataset = load_file(dataset_dir / f"{split}.safetensors")["tokens"]
+
+    print("Creating model")
     rngs = nnx.Rngs(42)
     model = GPTModel(
         vocab_size=model_conf["vocab_size"],
@@ -66,6 +73,7 @@ def main(run, datasets_dir_path):
         rngs=rngs,
     )
 
+    print("Creating optimizer")
     optimizer = nnx.Optimizer(
         model,
         optax.adamw(
@@ -75,7 +83,9 @@ def main(run, datasets_dir_path):
         wrt=nnx.Param
     )
 
+    print("Start train")
     train(run_dir, model, optimizer)
+    print("Done")
 
 
 if __name__ == "__main__":
