@@ -23,8 +23,63 @@ def download_dataset(dataset_dir, dataset_name):
     )
 
 
-def train(run_dir, model, optimizer):
+class BigTrainDataset:
+
+    def __init__(self, all_tokens, seq_length, microbatch_size):
+        self.xs = all_tokens[:-1].reshape(-1, microbatch_size, seq_length)
+        self.ys = all_tokens[:-1].reshape(-1, microbatch_size, seq_length)
+
+    def __getitem__(self, ix):
+        return (self.xs[ix], self.ys[ix])
+
+    def __len__(self):
+        return self.xs.shape[0]
+
+
+def load_dataset(
+    dataset_dir, split,
+    min_tokens, start_token,
+    world_size, microbatch_size,
+    gradient_accumulation_steps,
+    seq_length
+):
+    full_dataset = load_file(dataset_dir / f"{split}.safetensors")["tokens"]
+    if start_token > len(full_dataset):
+        raise Exception(f"start_token {start_token} is past the end of the dataset")
+
+    one_full_batch_tokens = world_size * microbatch_size * gradient_accumulation_steps * seq_length
+
+    if min_tokens == -1:
+        available_tokens = len(full_dataset) - start_token
+        available_batches = (available_tokens // one_full_batch_tokens)
+        tokens_needed = available_batches * one_full_batch_tokens
+    else:
+        if min_tokens % one_full_batch_tokens == 0:
+            tokens_needed = min_tokens
+        else:
+            batches_for_just_over_min = (min_tokens // one_full_batch_tokens) + 1
+            tokens_needed = batches_for_just_over_min * one_full_batch_tokens
+
+    # Note that we need one extra token for our Ys.
+    tokens_needed += 1
+
+    if len(full_dataset) < start_token + tokens_needed:
+        raise Exception(f"Not enough tokens (wanted {start_token + tokens_needed}, got {len(full_dataset)})")
+
+    return BigTrainDataset(
+        full_dataset[start_token:start_token + tokens_needed],
+        seq_length, microbatch_size,
+    )
+
+
+
+def train(run_dir, model, optimizer, train_dataset):
     save_checkpoint(run_dir, "checkpoint-test", model)
+
+    for xs, ys in train_dataset:
+        print(f"{xs.shape=}, {ys.shape=}")
+
+
 
 
 @click.command()
@@ -57,8 +112,14 @@ def main(run, datasets_dir_path):
     download_dataset(dataset_dir, dataset_name)
 
     with jax.default_device(jax.devices("cpu")[0]):
-        split = "train"
-        full_dataset = load_file(dataset_dir / f"{split}.safetensors")["tokens"]
+        world_size = 1  ## DDP
+        train_dataset = load_dataset(
+            dataset_dir, "train",
+            train_conf["min_train_tokens"], train_conf["start_train_token"],
+            world_size, train_conf["microbatch_size"],
+            train_conf.get("gradient_accumulation_steps"),
+            model_conf["context_length"]
+        )
 
     print("Creating model")
     rngs = nnx.Rngs(42)
@@ -84,7 +145,7 @@ def main(run, datasets_dir_path):
     )
 
     print("Start train")
-    train(run_dir, model, optimizer)
+    train(run_dir, model, optimizer, train_dataset)
     print("Done")
 
 
