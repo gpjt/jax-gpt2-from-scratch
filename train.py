@@ -23,11 +23,6 @@ def download_dataset(dataset_dir, dataset_name):
     )
 
 
-@jax.jit
-def get_dataset_item(ix, xs, ys):
-    return xs[ix], ys[ix]
-
-
 class BigTrainDataset:
 
     def __init__(self, all_tokens, seq_length, microbatch_size):
@@ -35,7 +30,7 @@ class BigTrainDataset:
         self.ys = all_tokens[:-1].reshape(-1, microbatch_size, seq_length)
 
     def __getitem__(self, ix):
-        return get_dataset_item(ix, self.xs, self.ys)
+        return self.xs[ix], self.ys[ix]
 
     def __len__(self):
         return self.xs.shape[0]
