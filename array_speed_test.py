@@ -8,7 +8,8 @@ import jax
 
 @click.command()
 @click.option("--commit", is_flag=True)
-def main(commit):
+@click.option("--put_items_to_gpu", is_flag=True)
+def main(commit, put_items_to_gpu):
     key = jax.random.key(42)
 
     cpu0 = jax.devices("cpu")[0]
@@ -37,12 +38,12 @@ def main(commit):
         print(f"{datetime.now()}: {item.device=}")
         print(f"{datetime.now()}: {item.committed=}")
 
-        if commit:
+        if put_items_to_gpu:
             start = time.time()
             item = jax.device_put(item, cuda0)
             end = time.time()
 
-            print(f"{datetime.now()}: Putting item {ii} on GPU took {end - start}s")
+            print(f"{datetime.now()}: Putting item {ii} to GPU took {end - start}s")
             print(f"{datetime.now()}: {item.shape=}")
             print(f"{datetime.now()}: {item.device=}")
             print(f"{datetime.now()}: {item.committed=}")
