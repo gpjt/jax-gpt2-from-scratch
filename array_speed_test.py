@@ -15,7 +15,7 @@ def main(commit):
     with jax.default_device(cpu0):
         base_array = jax.random.randint(
             key,
-            (3_260_252_161,),
+            (3_260_252_160,),
             0, 50_000,
             dtype=jax.numpy.uint16
         )
@@ -26,7 +26,7 @@ def main(commit):
     print(f"{datetime.now()}: {base_array.device=}")
     print(f"{datetime.now()}: {base_array.committed=}")
 
-    reshaped = base_array[:-1].reshape(-1, 6, 1024)
+    reshaped = base_array.reshape(-1, 6, 1024)
     print(f"{datetime.now()}: {reshaped.shape=}")
     print(f"{datetime.now()}: {reshaped.device=}")
     print(f"{datetime.now()}: {reshaped.committed=}")
