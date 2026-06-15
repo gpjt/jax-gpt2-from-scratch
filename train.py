@@ -48,7 +48,10 @@ def load_dataset(
     gradient_accumulation_steps,
     seq_length
 ):
-    full_dataset = load_file(dataset_dir / f"{split}.safetensors")["tokens"]
+    cpu0 = jax.devices("cpu")[0]
+    with jax.default_device(cpu0):
+        full_dataset = load_file(dataset_dir / f"{split}.safetensors")["tokens"]
+    full_dataset = jax.device_put(full_dataset, cpu0)
     if start_token > len(full_dataset):
         raise Exception(f"start_token {start_token} is past the end of the dataset")
 
@@ -116,15 +119,14 @@ def main(run, datasets_dir_path):
         raise Exception(f"{datasets_dir_path} is not a directory")
     download_dataset(dataset_dir, dataset_name)
 
-    with jax.default_device(jax.devices("cpu")[0]):
-        world_size = 1  ## DDP
-        train_dataset = load_dataset(
-            dataset_dir, "train",
-            train_conf["min_train_tokens"], train_conf["start_train_token"],
-            world_size, train_conf["microbatch_size"],
-            train_conf.get("gradient_accumulation_steps"),
-            model_conf["context_length"]
-        )
+    world_size = 1  ## DDP
+    train_dataset = load_dataset(
+        dataset_dir, "train",
+        train_conf["min_train_tokens"], train_conf["start_train_token"],
+        world_size, train_conf["microbatch_size"],
+        train_conf.get("gradient_accumulation_steps"),
+        model_conf["context_length"]
+    )
 
     print("Creating model")
     rngs = nnx.Rngs(42)
