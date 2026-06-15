@@ -12,6 +12,7 @@ def main(commit):
     key = jax.random.key(42)
 
     cpu0 = jax.devices("cpu")[0]
+    cuda0 = jax.devices("cuda")[0]
     with jax.default_device(cpu0):
         array = jax.random.randint(
             key,
@@ -26,23 +27,25 @@ def main(commit):
     print(f"{datetime.now()}: {array.device=}")
     print(f"{datetime.now()}: {array.committed=}")
 
-    start = time.time()
-    item = array[0]
-    end = time.time()
+    for ii in range(10):
+        start = time.time()
+        item = array[ii]
+        end = time.time()
 
-    print(f"{datetime.now()}: Getting first item took {end - start}s")
-    print(f"{datetime.now()}: {item.shape=}")
-    print(f"{datetime.now()}: {item.device=}")
-    print(f"{datetime.now()}: {item.committed=}")
+        print(f"{datetime.now()}: Getting item {ii} took {end - start}s")
+        print(f"{datetime.now()}: {item.shape=}")
+        print(f"{datetime.now()}: {item.device=}")
+        print(f"{datetime.now()}: {item.committed=}")
 
-    start = time.time()
-    item = array[1]
-    end = time.time()
+        if commit:
+            start = time.time()
+            item = jax.device_put(item, cuda0)
+            end = time.time()
 
-    print(f"{datetime.now()}: Getting second item took {end - start}s")
-    print(f"{datetime.now()}: {item.shape=}")
-    print(f"{datetime.now()}: {item.device=}")
-    print(f"{datetime.now()}: {item.committed=}")
+            print(f"{datetime.now()}: Putting item {ii} on GPU took {end - start}s")
+            print(f"{datetime.now()}: {item.shape=}")
+            print(f"{datetime.now()}: {item.device=}")
+            print(f"{datetime.now()}: {item.committed=}")
 
 
 if __name__ == "__main__":
