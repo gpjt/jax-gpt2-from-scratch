@@ -70,7 +70,7 @@ def load_dataset(
         raise Exception(f"Not enough tokens (wanted {start_token + tokens_needed}, got {len(full_dataset)})")
 
     return BigTrainDataset(
-        full_dataset[start_token:start_token + tokens_needed],
+        full_dataset[start_token:start_token + tokens_needed].block_until_ready(),
         seq_length, microbatch_size,
     )
 
