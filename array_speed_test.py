@@ -12,6 +12,8 @@ import jax
 def main(commit, put_items_to_gpu):
     key = jax.random.key(42)
 
+    print(f"{datetime.now()}: Creating array...")
+
     cpu0 = jax.devices("cpu")[0]
     cuda0 = jax.devices("cuda")[0]
     with jax.default_device(cpu0):
@@ -21,16 +23,21 @@ def main(commit, put_items_to_gpu):
             0, 50_000,
             dtype=jax.numpy.uint16
         )
+        array.block_until_ready()
     if commit:
         array = jax.device_put(array, cpu0)
+        array.block_until_ready()
 
     print(f"{datetime.now()}: {array.shape=}")
     print(f"{datetime.now()}: {array.device=}")
     print(f"{datetime.now()}: {array.committed=}")
 
+    array.block_until_ready()
+
     for ii in range(10):
         start = time.time()
         item = array[ii]
+        item.block_until_ready()
         end = time.time()
 
         print(f"{datetime.now()}: Getting item {ii} took {end - start}s")
@@ -41,6 +48,7 @@ def main(commit, put_items_to_gpu):
         if put_items_to_gpu:
             start = time.time()
             item = jax.device_put(item, cuda0)
+            item.block_until_ready()
             end = time.time()
 
             print(f"{datetime.now()}: Putting item {ii} to GPU took {end - start}s")
