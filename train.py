@@ -92,7 +92,7 @@ def calculate_loss(model, inputs, targets):
     return loss
 
 
-@jax.jit
+@nnx.jit
 def train_step(model, optimizer, inputs, targets):
     loss, grads = nnx.value_and_grad(calculate_loss)(model, inputs, targets)
     optimizer.update(model, grads)
@@ -133,9 +133,6 @@ def train(run_dir, model, optimizer, train_dataset, rank, world_size, start_glob
                 loss=f"{train_loss.item():.3f}",
                 tps=f"{tokens_per_sec:,.0f}"
             )
-
-
-
 
 
 @click.command()
