@@ -28,7 +28,7 @@ def download_dataset(dataset_dir, dataset_name):
         allow_patterns="*"
     )
     # snapshot_download messes with the stdout a bit
-    print("\n\n")
+    print("")
 
 
 class BigTrainDataset:
@@ -87,6 +87,8 @@ def load_dataset(
 def train(run_dir, model, optimizer, train_dataset, rank, world_size, gradient_accumulation_steps, start_global_step):
     save_checkpoint(run_dir, "checkpoint-test", model)
 
+    model_device = jax.devices()[0]
+
     total_global_steps = (len(train_dataset) // world_size) // gradient_accumulation_steps
 
     progress_bar = tqdm(
@@ -96,8 +98,8 @@ def train(run_dir, model, optimizer, train_dataset, rank, world_size, gradient_a
     for global_step in progress_bar:
         for accumulation_step in range(gradient_accumulation_steps):
             inputs, targets = train_dataset[((global_step * gradient_accumulation_steps) + accumulation_step) * world_size + rank]
-
-
+            inputs = jax.device_put(inputs, model_device)
+            targets = jax.device_put(targets, model_device)
 
 
 @click.command()
