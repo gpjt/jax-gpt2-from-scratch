@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -83,8 +84,23 @@ def load_dataset(
     )
 
 
+def calculate_loss(model, inputs, targets):
+    logits = model(inputs)
+    loss = optax.losses.softmax_cross_entropy_with_integer_labels(
+        logits, targets
+    ).mean()
+    return loss
 
-def train(run_dir, model, optimizer, train_dataset, rank, world_size, gradient_accumulation_steps, start_global_step):
+
+@jax.jit
+def train_step(model, optimizer, inputs, targets):
+    loss, grads = nnx.value_and_grad(calculate_loss)(model, inputs, targets)
+    optimizer.update(model, grads)
+    return loss
+
+
+def train(run_dir, model, optimizer, train_dataset, rank, world_size, start_global_step):
+    gradient_accumulation_steps = 1
     save_checkpoint(run_dir, "checkpoint-test", model)
 
     model_device = jax.devices()[0]
@@ -95,11 +111,31 @@ def train(run_dir, model, optimizer, train_dataset, rank, world_size, gradient_a
         range(start_global_step, total_global_steps),
         disable=(rank != 0)
     )
+
+    tokens_seen_this_rank = 0
+    start_time = time.time()
+
     for global_step in progress_bar:
         for accumulation_step in range(gradient_accumulation_steps):
             inputs, targets = train_dataset[((global_step * gradient_accumulation_steps) + accumulation_step) * world_size + rank]
             inputs = jax.device_put(inputs, model_device)
             targets = jax.device_put(targets, model_device)
+
+            train_loss = train_step(model, optimizer, inputs, targets)
+
+            microbatch_size, sequence_length = inputs.shape
+            tokens_seen_this_rank += microbatch_size * sequence_length
+
+        if rank == 0:
+            elapsed_time = time.time() - start_time
+            tokens_per_sec = (tokens_seen_this_rank * world_size) / elapsed_time
+            progress_bar.set_postfix(
+                loss=f"{train_loss.item():.3f}",
+                tps=f"{tokens_per_sec:,.0f}"
+            )
+
+
+
 
 
 @click.command()
@@ -173,7 +209,6 @@ def main(run, datasets_dir_path):
         model, optimizer,
         train_dataset,
         rank, world_size,
-        train_conf["gradient_accumulation_steps"],
         start_global_step
     )
     log("Done")
