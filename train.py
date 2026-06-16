@@ -1,7 +1,9 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 import click
+from tqdm import tqdm
 
 from huggingface_hub import snapshot_download
 
@@ -14,6 +16,10 @@ from checkpointing import save_checkpoint
 from gpt import GPTModel
 
 
+def log(s):
+    print(f"{datetime.now()} {s}")
+
+
 def download_dataset(dataset_dir, dataset_name):
     snapshot_download(
         f"{dataset_name}",
@@ -21,6 +27,8 @@ def download_dataset(dataset_dir, dataset_name):
         local_dir=dataset_dir,
         allow_patterns="*"
     )
+    # snapshot_download messes with the stdout a bit
+    print("\n\n")
 
 
 class BigTrainDataset:
@@ -76,11 +84,18 @@ def load_dataset(
 
 
 
-def train(run_dir, model, optimizer, train_dataset):
+def train(run_dir, model, optimizer, train_dataset, rank, world_size, gradient_accumulation_steps, start_global_step):
     save_checkpoint(run_dir, "checkpoint-test", model)
 
-    for xs, ys in train_dataset:
-        print(f"{xs.shape=}, {ys.shape=}")
+    total_global_steps = (len(train_dataset) // world_size) // gradient_accumulation_steps
+
+    progress_bar = tqdm(
+        range(start_global_step, total_global_steps),
+        disable=(rank != 0)
+    )
+    for global_step in progress_bar:
+        for accumulation_step in range(gradient_accumulation_steps):
+            inputs, targets = train_dataset[((global_step * gradient_accumulation_steps) + accumulation_step) * world_size + rank]
 
 
 
@@ -105,6 +120,7 @@ def main(run, datasets_dir_path):
     with open(train_conf_file, "r") as f:
         train_conf = json.load(f)
 
+    log("Downloading dataset")
     datasets_dir = Path(datasets_dir_path)
     dataset_name = train_conf["dataset"]
     dataset_dir = datasets_dir / dataset_name
@@ -114,6 +130,7 @@ def main(run, datasets_dir_path):
         raise Exception(f"{datasets_dir_path} is not a directory")
     download_dataset(dataset_dir, dataset_name)
 
+    log("Loading dataset into RAM")
     world_size = 1  ## DDP
     train_dataset = load_dataset(
         dataset_dir, "train",
@@ -123,7 +140,7 @@ def main(run, datasets_dir_path):
         model_conf["context_length"]
     )
 
-    print("Creating model")
+    log("Creating model")
     rngs = nnx.Rngs(42)
     model = GPTModel(
         vocab_size=model_conf["vocab_size"],
@@ -136,7 +153,7 @@ def main(run, datasets_dir_path):
         rngs=rngs,
     )
 
-    print("Creating optimizer")
+    log("Creating optimizer")
     optimizer = nnx.Optimizer(
         model,
         optax.adamw(
@@ -146,9 +163,18 @@ def main(run, datasets_dir_path):
         wrt=nnx.Param
     )
 
-    print("Start train")
-    train(run_dir, model, optimizer, train_dataset)
-    print("Done")
+    log("Start train")
+    start_global_step = 0  ## checkpointing
+    rank = 0  ## DDP
+    train(
+        run_dir,
+        model, optimizer,
+        train_dataset,
+        rank, world_size,
+        train_conf["gradient_accumulation_steps"],
+        start_global_step
+    )
+    log("Done")
 
 
 if __name__ == "__main__":
