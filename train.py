@@ -99,8 +99,14 @@ def train_step(model, optimizer, inputs, targets):
     return loss
 
 
-def train(run_dir, model, optimizer, train_dataset, rank, world_size, start_global_step):
-    gradient_accumulation_steps = 1
+def train(
+    run_dir,
+    model, optimizer,
+    train_dataset,
+    rank, world_size,
+    gradient_accumulation_steps,
+    start_global_step
+):
     save_checkpoint(run_dir, "checkpoint-test", model)
 
     model_device = jax.devices()[0]
@@ -134,6 +140,17 @@ def train(run_dir, model, optimizer, train_dataset, rank, world_size, start_glob
                 tps=f"{tokens_per_sec:,.0f}"
             )
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    if rank == 0:
+        print(f"\n\n\nTraining complete in {elapsed_time:,.3f} seconds")
+        total_tokens_seen = tokens_seen_this_rank * world_size
+        print(f"Tokens seen: {total_tokens_seen:,.0f}")
+        print(f"Throughput: {total_tokens_seen / elapsed_time:,.0f} tokens/second")
+        print(f"Final train loss: {train_loss.item():.3f}")
+
+
 
 @click.command()
 @click.argument("run")
@@ -155,6 +172,9 @@ def main(run, datasets_dir_path):
     with open(train_conf_file, "r") as f:
         train_conf = json.load(f)
 
+    # Gradient accumulation
+    gradient_accumulation_steps = 1  # train_conf.get("gradient_accumulation_steps"),
+
     log("Downloading dataset")
     datasets_dir = Path(datasets_dir_path)
     dataset_name = train_conf["dataset"]
@@ -171,7 +191,7 @@ def main(run, datasets_dir_path):
         dataset_dir, "train",
         train_conf["min_train_tokens"], train_conf["start_train_token"],
         world_size, train_conf["microbatch_size"],
-        train_conf.get("gradient_accumulation_steps"),
+        gradient_accumulation_steps,
         model_conf["context_length"]
     )
 
@@ -206,6 +226,7 @@ def main(run, datasets_dir_path):
         model, optimizer,
         train_dataset,
         rank, world_size,
+        gradient_accumulation_steps,
         start_global_step
     )
     log("Done")
