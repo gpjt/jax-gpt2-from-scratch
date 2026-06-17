@@ -1,5 +1,8 @@
 datasets/
 runs/*/checkpoints
+runs/*/loss-chart.png
+runs/*/grad-norm-chart.png
+runs/*/learning-rate-chart.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

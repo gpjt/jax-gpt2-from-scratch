@@ -1,4 +1,6 @@
 import datetime
+import json
+from pathlib import Path
 
 from flax import nnx
 
@@ -13,6 +15,9 @@ def save_checkpoint(
     run_dir,
     name,
     model,
+    min_train_loss, max_train_loss, avg_train_loss,
+    global_step,
+    is_best,
 ):
     checkpoints_dir = get_checkpoints_dir(run_dir)
 
@@ -32,3 +37,26 @@ def save_checkpoint(
         simple_dict[key] = array
 
     st_save_file(simple_dict, checkpoint_dir / "model.safetensors")
+
+    with open(checkpoint_dir / "meta.json", "w") as f:
+        json.dump(
+            dict(
+                min_train_loss=min_train_loss,
+                max_train_loss=max_train_loss,
+                avg_train_loss=avg_train_loss,
+                global_step=global_step,
+                is_best=is_best,
+            ),
+            f,
+            indent=2,
+        )
+
+    symlink_target = Path(".") / checkpoint_dir.name
+    if is_best:
+        best_path = checkpoints_dir / "best"
+        best_path.unlink(missing_ok=True)
+        best_path.symlink_to(symlink_target, target_is_directory=True)
+
+    latest_path = checkpoints_dir / "latest"
+    latest_path.unlink(missing_ok=True)
+    latest_path.symlink_to(symlink_target, target_is_directory=True)

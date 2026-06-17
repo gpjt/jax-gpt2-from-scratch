@@ -8,12 +8,16 @@ from tqdm import tqdm
 
 from huggingface_hub import snapshot_download
 
+import matplotlib.pyplot as plt
+from matplotlib import font_manager
+from matplotlib.ticker import MaxNLocator
+
 import jax
 import optax
 from flax import nnx
 from safetensors.flax import load_file
 
-from checkpointing import save_checkpoint
+from checkpointing import get_checkpoints_dir, save_checkpoint
 from gpt import GPTModel
 
 
@@ -84,6 +88,207 @@ def load_dataset(
     )
 
 
+def get_training_data(run_dir):
+    checkpoints_dir = get_checkpoints_dir(run_dir)
+
+    def sanitize(val, cap=1_000_000):
+        if val == float("inf"):
+            return cap
+        if val == float("-inf"):
+            return -cap
+        return val
+
+    learning_rates = []
+    min_train_losses = []
+    max_train_losses = []
+    avg_train_losses = []
+    max_grad_norms = []
+    avg_grad_norms = []
+    frac_clipped = []
+    best_global_step = None
+    for item in checkpoints_dir.iterdir():
+        if item.name == "latest":
+            continue
+
+        meta = json.loads((item / "meta.json").read_text())
+        if item.name == "best":
+            best_global_step = meta["global_step"]
+            continue
+
+        if meta.get("learning_rate") is not None:
+            learning_rates.append((meta["global_step"], meta["learning_rate"]))
+        min_train_losses.append((meta["global_step"], meta["min_train_loss"]))
+        max_train_losses.append((meta["global_step"], meta["max_train_loss"]))
+        avg_train_losses.append((meta["global_step"], meta["avg_train_loss"]))
+
+        if meta.get("max_grad_norms") is not None:
+            max_grad_norms.append((meta["global_step"], sanitize(meta["max_grad_norms"])))
+        if meta.get("avg_grad_norms") is not None:
+            avg_grad_norms.append((meta["global_step"], sanitize(meta["avg_grad_norms"])))
+        if meta.get("frac_clipped") is not None:
+            frac_clipped.append((meta["global_step"], meta["frac_clipped"]))
+
+    learning_rates.sort(key=lambda x: x[0])
+    min_train_losses.sort(key=lambda x: x[0])
+    max_train_losses.sort(key=lambda x: x[0])
+    avg_train_losses.sort(key=lambda x: x[0])
+    max_grad_norms.sort(key=lambda x: x[0])
+    avg_grad_norms.sort(key=lambda x: x[0])
+    frac_clipped.sort(key=lambda x: x[0])
+
+    return (
+        learning_rates,
+        min_train_losses, max_train_losses, avg_train_losses,
+        max_grad_norms, avg_grad_norms, frac_clipped,
+        best_global_step
+    )
+
+
+def generate_training_charts(run_dir, clipping_max_norm=None):
+    (
+        learning_rates,
+        min_train_points, max_train_points, avg_train_points,
+        max_grad_points, avg_grad_points, frac_clipped_points,
+        best_global_step
+    ) = get_training_data(run_dir)
+
+    plt.xkcd()
+
+    font_family = None
+    for f in font_manager.fontManager.ttflist:
+        if "xkcd" in f.name.lower():
+            font_family = f.name
+            break
+    if font_family is not None:
+        plt.rcParams['font.family'] = font_family
+
+    # --- Chart 1: Loss ---
+
+    fig, ax_loss = plt.subplots(figsize=(8, 6), dpi=100)
+
+    train_steps, min_train_losses = zip(*min_train_points)
+    _, max_train_losses = zip(*max_train_points)
+    _, avg_train_losses = zip(*avg_train_points)
+
+    ax_loss.fill_between(
+        train_steps,
+        min_train_losses,
+        max_train_losses,
+        color="lightblue",
+        alpha=0.25,
+        label="MIN–MAX LOSS",
+    )
+    ax_loss.plot(
+        train_steps,
+        avg_train_losses,
+        color="blue",
+        label="AVG LOSS",
+        marker="o",
+        linestyle="-",
+    )
+
+    ax_loss.set_title("TRAINING RUN: LOSS")
+    ax_loss.set_xlabel("GLOBAL STEP")
+    ax_loss.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax_loss.set_ylabel("LOSS (LOG)")
+    ax_loss.set_yscale("log")
+
+    if best_global_step is not None:
+        ax_loss.axvline(
+            best_global_step,
+            color="red",
+            linestyle="--",
+            linewidth=1.5,
+            label="BEST STEP",
+        )
+
+    ax_loss.legend(
+        loc="upper right",
+        handlelength=2.0,
+        handletextpad=0.6,
+    )
+
+    fig.tight_layout(rect=(0, 0.12, 1, 1))
+    image_file = run_dir / "loss-chart.png"
+    fig.savefig(image_file, bbox_inches="tight")
+    plt.close(fig)
+
+    # --- Chart 2: Grad Norm ---
+
+    if max_grad_points or avg_grad_points:
+        fig_grad, ax_grad = plt.subplots(figsize=(8, 6), dpi=100)
+
+        if max_grad_points:
+            xs, ys = zip(*max_grad_points)
+            ax_grad.plot(
+                xs, ys,
+                color="green",
+                label="GRAD MAX",
+                marker="x",
+                linestyle=":",
+            )
+        if avg_grad_points:
+            xs, ys = zip(*avg_grad_points)
+            ax_grad.plot(
+                xs, ys,
+                color="lightgreen",
+                label="GRAD AVG",
+                marker="x",
+                linestyle=":",
+            )
+
+        if clipping_max_norm is not None:
+            ax_grad.axhline(
+                clipping_max_norm,
+                color="green",
+                linestyle="--",
+                linewidth=1.0,
+                label="GRAD CLIP",
+            )
+            ax_grad.set_ylim(0, clipping_max_norm + 2)
+
+        ax_grad.set_title("TRAINING RUN: GRAD NORM")
+        ax_grad.set_xlabel("GLOBAL STEP")
+        ax_grad.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax_grad.set_ylabel("GRAD NORM (L2, PRE-CLIP)")
+
+        ax_grad.legend(
+            loc="upper right",
+            handlelength=2.0,
+            handletextpad=0.6,
+        )
+
+        fig_grad.tight_layout(rect=(0, 0.15, 1, 1))
+        grad_image_file = run_dir / "grad-norm-chart.png"
+        fig_grad.savefig(grad_image_file, bbox_inches="tight")
+        plt.close(fig_grad)
+
+    # --- Chart 3: Learning Rate ---
+
+    if learning_rates:
+        fig_lr, ax_lr = plt.subplots(figsize=(8, 6), dpi=100)
+
+        lr_steps, lr_values = zip(*learning_rates)
+
+        ax_lr.plot(
+            lr_steps,
+            lr_values,
+            color="purple",
+            marker="o",
+            linestyle="-",
+        )
+
+        ax_lr.set_title("TRAINING RUN: LEARNING RATE")
+        ax_lr.set_xlabel("GLOBAL STEP")
+        ax_lr.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax_lr.set_ylabel("LEARNING RATE")
+
+        fig_lr.tight_layout(rect=(0, 0.15, 1, 1))
+        lr_image_file = run_dir / "learning-rate-chart.png"
+        fig_lr.savefig(lr_image_file, bbox_inches="tight")
+        plt.close(fig_lr)
+
+
 def calculate_loss(model, inputs, targets):
     logits = model(inputs)
     loss = optax.losses.softmax_cross_entropy_with_integer_labels(
@@ -105,10 +310,9 @@ def train(
     train_dataset,
     rank, world_size,
     gradient_accumulation_steps,
-    start_global_step
+    start_global_step,
+    checkpoint_interval,
 ):
-    save_checkpoint(run_dir, "checkpoint-test", model)
-
     model_device = jax.devices()[0]
 
     total_global_steps = (len(train_dataset) // world_size) // gradient_accumulation_steps
@@ -118,6 +322,8 @@ def train(
         disable=(rank != 0)
     )
 
+    best_loss = None
+    train_losses = []
     tokens_seen_this_rank = 0
     start_time = time.time()
 
@@ -128,9 +334,38 @@ def train(
             targets = jax.device_put(targets, model_device)
 
             train_loss = train_step(model, optimizer, inputs, targets)
+            train_losses.append(train_loss.item())
 
             microbatch_size, sequence_length = inputs.shape
             tokens_seen_this_rank += microbatch_size * sequence_length
+
+        is_checkpoint_iter = (
+            (global_step % checkpoint_interval == 0)
+            or (global_step == total_global_steps - 1)
+        )
+        if is_checkpoint_iter:
+            if rank == 0:
+                log("Saving checkpoint")
+                min_train_loss = min(train_losses)
+                max_train_loss = max(train_losses)
+                avg_train_loss = sum(train_losses) / len(train_losses)
+                train_losses = []
+
+                if best_loss is None or avg_train_loss < best_loss:
+                    is_best = True
+                    best_loss = avg_train_loss
+                else:
+                    is_best = False
+
+                save_checkpoint(
+                    run_dir,
+                    f"iteration-{global_step}",
+                    model,
+                    min_train_loss, max_train_loss, avg_train_loss,
+                    global_step,
+                    is_best,
+                )
+                generate_training_charts(run_dir)
 
         if rank == 0:
             elapsed_time = time.time() - start_time
@@ -227,7 +462,8 @@ def main(run, datasets_dir_path):
         train_dataset,
         rank, world_size,
         gradient_accumulation_steps,
-        start_global_step
+        start_global_step,
+        train_conf["checkpoint_interval"],
     )
     log("Done")
 
