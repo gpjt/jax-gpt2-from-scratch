@@ -408,7 +408,7 @@ def main(run, datasets_dir_path):
         train_conf = json.load(f)
 
     # Gradient accumulation
-    gradient_accumulation_steps = 1  # train_conf.get("gradient_accumulation_steps"),
+    gradient_accumulation_steps = train_conf.get("gradient_accumulation_steps")
 
     log("Downloading dataset")
     datasets_dir = Path(datasets_dir_path)
@@ -446,9 +446,12 @@ def main(run, datasets_dir_path):
     log("Creating optimizer")
     optimizer = nnx.Optimizer(
         model,
-        optax.adamw(
-            learning_rate=train_conf["learning_rate"],
-            weight_decay=train_conf["weight_decay"],
+        optax.MultiSteps(
+            optax.adamw(
+                learning_rate=train_conf["learning_rate"],
+                weight_decay=train_conf["weight_decay"],
+            ),
+            every_k_schedule=gradient_accumulation_steps
         ),
         wrt=nnx.Param
     )
