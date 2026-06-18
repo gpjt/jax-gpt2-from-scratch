@@ -15,7 +15,6 @@ from matplotlib.ticker import MaxNLocator
 import jax
 import optax
 from flax import nnx
-from jax import numpy as jnp
 from safetensors.flax import load_file
 
 from checkpointing import get_checkpoints_dir, save_checkpoint
@@ -300,20 +299,9 @@ def calculate_loss(model, inputs, targets):
 
 @nnx.jit
 def train_step(model, optimizer, inputs, targets):
-    loss_list = []
-    grads_list = []
-    for microbatch_inputs, microbatch_targets in zip(inputs, targets):
-        microbatch_loss, microbatch_grads = nnx.value_and_grad(calculate_loss)(model, microbatch_inputs, microbatch_targets)
-        loss_list.append(microbatch_loss)
-        grads_list.append(microbatch_grads)
-
-    average_grads = jax.tree.map(
-        lambda *items: jnp.array(items).mean(axis=0),
-        *grads_list
-    )
-
-    optimizer.update(model, average_grads)
-    return jnp.array(loss_list).mean()
+    loss, grads = nnx.value_and_grad(calculate_loss)(model, inputs, targets)
+    optimizer.update(model, grads)
+    return loss
 
 
 def train(
@@ -340,20 +328,16 @@ def train(
     start_time = time.time()
 
     for global_step in progress_bar:
-        step_ds_indexes = []
         for accumulation_step in range(gradient_accumulation_steps):
-            step_ds_indexes.append(((global_step * gradient_accumulation_steps) + accumulation_step) * world_size + rank)
+            inputs, targets = train_dataset[((global_step * gradient_accumulation_steps) + accumulation_step) * world_size + rank]
+            inputs = jax.device_put(inputs, model_device)
+            targets = jax.device_put(targets, model_device)
 
-        inputs, targets = train_dataset[jnp.array(step_ds_indexes)]
+            train_loss = train_step(model, optimizer, inputs, targets)
+            train_losses.append(train_loss.item())
 
-        inputs = jax.device_put(inputs, model_device)
-        targets = jax.device_put(targets, model_device)
-
-        train_loss = train_step(model, optimizer, inputs, targets)
-        train_losses.append(train_loss.item())
-
-        _, microbatch_size, sequence_length = inputs.shape
-        tokens_seen_this_rank += gradient_accumulation_steps * microbatch_size * sequence_length
+            microbatch_size, sequence_length = inputs.shape
+            tokens_seen_this_rank += microbatch_size * sequence_length
 
         is_checkpoint_iter = (
             (global_step % checkpoint_interval == 0)
@@ -423,6 +407,9 @@ def main(run, datasets_dir_path):
     with open(train_conf_file, "r") as f:
         train_conf = json.load(f)
 
+    # Gradient accumulation
+    gradient_accumulation_steps = 1  # train_conf.get("gradient_accumulation_steps"),
+
     log("Downloading dataset")
     datasets_dir = Path(datasets_dir_path)
     dataset_name = train_conf["dataset"]
@@ -435,7 +422,6 @@ def main(run, datasets_dir_path):
 
     log("Loading dataset into RAM")
     world_size = 1  ## DDP
-    gradient_accumulation_steps = train_conf.get("gradient_accumulation_steps")
     train_dataset = load_dataset(
         dataset_dir, "train",
         train_conf["min_train_tokens"], train_conf["start_train_token"],
