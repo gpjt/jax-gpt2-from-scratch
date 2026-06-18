@@ -339,6 +339,9 @@ def train(
             microbatch_size, sequence_length = inputs.shape
             tokens_seen_this_rank += microbatch_size * sequence_length
 
+
+        current_learning_rate = optimizer.opt_state.inner_opt_state.hyperparams["learning_rate"].get_value().item()
+
         is_checkpoint_iter = (
             (global_step % checkpoint_interval == 0)
             or (global_step == total_global_steps - 1)
@@ -361,6 +364,7 @@ def train(
                     run_dir,
                     f"iteration-{global_step}",
                     model,
+                    current_learning_rate,
                     min_train_loss, max_train_loss, avg_train_loss,
                     global_step,
                     is_best,
@@ -379,11 +383,11 @@ def train(
     elapsed_time = end_time - start_time
 
     if rank == 0:
-        print(f"\n\n\nTraining complete in {elapsed_time:,.3f} seconds")
+        log(f"\n\n\nTraining complete in {elapsed_time:,.3f} seconds")
         total_tokens_seen = tokens_seen_this_rank * world_size
-        print(f"Tokens seen: {total_tokens_seen:,.0f}")
-        print(f"Throughput: {total_tokens_seen / elapsed_time:,.0f} tokens/second")
-        print(f"Final train loss: {train_loss.item():.3f}")
+        log(f"Tokens seen: {total_tokens_seen:,.0f}")
+        log(f"Throughput: {total_tokens_seen / elapsed_time:,.0f} tokens/second")
+        log(f"Final train loss: {train_loss.item():.3f}")
 
 
 
@@ -407,7 +411,6 @@ def main(run, datasets_dir_path):
     with open(train_conf_file, "r") as f:
         train_conf = json.load(f)
 
-    # Gradient accumulation
     gradient_accumulation_steps = train_conf.get("gradient_accumulation_steps")
 
     log("Downloading dataset")
@@ -422,6 +425,7 @@ def main(run, datasets_dir_path):
 
     log("Loading dataset into RAM")
     world_size = 1  ## DDP
+    rank = 0  ## DDP
     train_dataset = load_dataset(
         dataset_dir, "train",
         train_conf["min_train_tokens"], train_conf["start_train_token"],
@@ -444,13 +448,25 @@ def main(run, datasets_dir_path):
     )
 
     log("Creating optimizer")
+    total_steps = (len(train_dataset) // world_size) // gradient_accumulation_steps
+    warmup_steps = (total_steps * train_conf["warmup_period_percent"]) // 100
+    learning_rate = train_conf["learning_rate"]
+    schedule = optax.warmup_cosine_decay_schedule(
+        init_value=learning_rate * 0.00001,
+        peak_value=learning_rate,
+        warmup_steps=warmup_steps,
+        decay_steps=total_steps,  # !!
+        end_value=learning_rate / 10,
+    )
+
+    optax_optimizer = optax.inject_hyperparams(optax.adamw)(
+        learning_rate=schedule,
+        weight_decay=train_conf["weight_decay"],
+    )
     optimizer = nnx.Optimizer(
         model,
         optax.MultiSteps(
-            optax.adamw(
-                learning_rate=train_conf["learning_rate"],
-                weight_decay=train_conf["weight_decay"],
-            ),
+            optax_optimizer,
             every_k_schedule=gradient_accumulation_steps
         ),
         wrt=nnx.Param
@@ -458,7 +474,6 @@ def main(run, datasets_dir_path):
 
     log("Start train")
     start_global_step = 0  ## checkpointing
-    rank = 0  ## DDP
     train(
         run_dir,
         model, optimizer,

@@ -15,6 +15,7 @@ def save_checkpoint(
     run_dir,
     name,
     model,
+    learning_rate,
     min_train_loss, max_train_loss, avg_train_loss,
     global_step,
     is_best,
@@ -41,6 +42,7 @@ def save_checkpoint(
     with open(checkpoint_dir / "meta.json", "w") as f:
         json.dump(
             dict(
+                learning_rate=learning_rate,
                 min_train_loss=min_train_loss,
                 max_train_loss=max_train_loss,
                 avg_train_loss=avg_train_loss,
