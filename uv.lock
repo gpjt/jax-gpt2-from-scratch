@@ -530,6 +530,7 @@ dependencies = [
     { name = "jax" },
     { name = "matplotlib" },
     { name = "optax" },
+    { name = "orbax" },
     { name = "safetensors" },
     { name = "tiktoken" },
 ]
@@ -549,6 +550,7 @@ requires-dist = [
     { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.10.1" },
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "optax", specifier = ">=0.2.8" },
+    { name = "orbax", specifier = ">=0.1.9" },
     { name = "safetensors", specifier = ">=0.7.0" },
     { name = "tiktoken", specifier = ">=0.13.0" },
 ]
@@ -1048,6 +1050,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/8c/f9/e3d11ae6f298ee941
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/69/6a93d8600c339d7687a05857c7907bd4dd8cf88691a5ea106d7a50af90a1/optax-0.2.8-py3-none-any.whl", hash = "sha256:e3ca2d36c99daab1800ae9dbc0545034382d6bc780b24d969e1b0df65fa31cb4", size = 402960, upload-time = "2026-03-20T23:30:03.886Z" },
 ]
+
+[[package]]
+name = "orbax"
+version = "0.1.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "orbax-checkpoint" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c7/78/0e144f12703c95d4495e9abc390c2f548ee9f24d2e487137108a921b1d81/orbax-0.1.9.tar.gz", hash = "sha256:42dd487ceef9fbf027f4720f3d041686af75120466a528a8a8141226bc197218", size = 1649, upload-time = "2023-09-06T20:43:02.819Z" }
 
 [[package]]
 name = "orbax-checkpoint"

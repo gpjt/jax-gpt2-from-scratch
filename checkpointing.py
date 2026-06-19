@@ -4,7 +4,8 @@ from pathlib import Path
 
 from flax import nnx
 
-from safetensors.flax import save_file as st_save_file
+from orbax.checkpoint import v1 as ocp
+from safetensors.flax import load_file, save_file
 
 
 def get_checkpoints_dir(run_dir):
@@ -14,7 +15,7 @@ def get_checkpoints_dir(run_dir):
 def save_checkpoint(
     run_dir,
     name,
-    model,
+    model, optimizer,
     learning_rate,
     min_train_loss, max_train_loss, avg_train_loss,
     global_step,
@@ -37,7 +38,9 @@ def save_checkpoint(
         key = ".".join(str(key) for key in tuple_key)
         simple_dict[key] = array
 
-    st_save_file(simple_dict, checkpoint_dir / "model.safetensors")
+    save_file(simple_dict, checkpoint_dir / "model.safetensors")
+
+    ocp.save_pytree(checkpoint_dir / "optimizer", optimizer.opt_state)
 
     with open(checkpoint_dir / "meta.json", "w") as f:
         json.dump(
@@ -62,3 +65,28 @@ def save_checkpoint(
     latest_path = checkpoints_dir / "latest"
     latest_path.unlink(missing_ok=True)
     latest_path.symlink_to(symlink_target, target_is_directory=True)
+
+
+def load_model(model, file):
+    model_state_simple_dict = load_file(file)
+    dict_flat_state = {}
+    for key, array in model_state_simple_dict.items():
+        elements = key.split(".")
+        list_key = []
+        for element in elements:
+            try:
+                list_key.append(int(element))
+            except ValueError:
+                list_key.append(element)
+        dict_flat_state[tuple(list_key)] = array
+
+    new_flat_state = nnx.from_flat_state(dict_flat_state)
+    nnx.update(model, new_flat_state)
+
+
+def load_checkpoint(run_dir, checkpoint, model, optimizer=None):
+    checkpoints_dir = get_checkpoints_dir(run_dir)
+    checkpoint_dir = checkpoints_dir / checkpoint
+
+    load_model(model, checkpoint_dir / "model.safetensors")
+

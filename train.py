@@ -304,7 +304,7 @@ def train(
                 save_checkpoint(
                     run_dir,
                     f"iteration-{global_step}",
-                    model,
+                    model, optimizer,
                     current_learning_rate,
                     min_train_loss, max_train_loss, avg_train_loss,
                     global_step,
