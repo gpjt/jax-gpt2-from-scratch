@@ -1,4 +1,5 @@
 from functools import partial
+from textwrap import dedent
 
 import click
 import tiktoken
@@ -46,11 +47,25 @@ def main(model_safetensors_file):
     )
     load_model(model, model_safetensors_file)
 
-    seed_text = "Every effort moves you"
-    seed_tokens = tokenizer.encode(seed_text)
-    result = generate(model, seed_tokens, 20)
+    test_text = dedent("""
+        It is an ancient Mariner,
+        And he stoppeth one of three.
+        'By thy long grey beard and glittering eye,
+        Now wherefore stopp'st thou me?
+    """)
+    print(f"Input:\n---\n{test_text}\n---\n")
 
-    print(tokenizer.decode(result))
+    test_tokens = tokenizer.encode(test_text)
+
+    batched_tokens = jnp.array([test_tokens])
+
+    logits = model(batched_tokens)
+
+    unbatched_logits = jnp.squeeze(logits, axis=0)
+    predicted = jnp.argmax(unbatched_logits, axis=-1)
+
+    output = tokenizer.decode(predicted)
+    print(f"Output:\n---\n{output}\n---\n")
 
 
 
