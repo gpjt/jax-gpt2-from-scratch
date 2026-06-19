@@ -121,13 +121,6 @@ def get_training_data(run_dir):
         max_train_losses.append((meta["global_step"], meta["max_train_loss"]))
         avg_train_losses.append((meta["global_step"], meta["avg_train_loss"]))
 
-        if meta.get("max_grad_norms") is not None:
-            max_grad_norms.append((meta["global_step"], sanitize(meta["max_grad_norms"])))
-        if meta.get("avg_grad_norms") is not None:
-            avg_grad_norms.append((meta["global_step"], sanitize(meta["avg_grad_norms"])))
-        if meta.get("frac_clipped") is not None:
-            frac_clipped.append((meta["global_step"], meta["frac_clipped"]))
-
     learning_rates.sort(key=lambda x: x[0])
     min_train_losses.sort(key=lambda x: x[0])
     max_train_losses.sort(key=lambda x: x[0])
@@ -139,7 +132,6 @@ def get_training_data(run_dir):
     return (
         learning_rates,
         min_train_losses, max_train_losses, avg_train_losses,
-        max_grad_norms, avg_grad_norms, frac_clipped,
         best_global_step
     )
 
@@ -148,7 +140,6 @@ def generate_training_charts(run_dir, clipping_max_norm=None):
     (
         learning_rates,
         min_train_points, max_train_points, avg_train_points,
-        max_grad_points, avg_grad_points, frac_clipped_points,
         best_global_step
     ) = get_training_data(run_dir)
 
@@ -213,57 +204,7 @@ def generate_training_charts(run_dir, clipping_max_norm=None):
     fig.savefig(image_file, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Chart 2: Grad Norm ---
-
-    if max_grad_points or avg_grad_points:
-        fig_grad, ax_grad = plt.subplots(figsize=(8, 6), dpi=100)
-
-        if max_grad_points:
-            xs, ys = zip(*max_grad_points)
-            ax_grad.plot(
-                xs, ys,
-                color="green",
-                label="GRAD MAX",
-                marker="x",
-                linestyle=":",
-            )
-        if avg_grad_points:
-            xs, ys = zip(*avg_grad_points)
-            ax_grad.plot(
-                xs, ys,
-                color="lightgreen",
-                label="GRAD AVG",
-                marker="x",
-                linestyle=":",
-            )
-
-        if clipping_max_norm is not None:
-            ax_grad.axhline(
-                clipping_max_norm,
-                color="green",
-                linestyle="--",
-                linewidth=1.0,
-                label="GRAD CLIP",
-            )
-            ax_grad.set_ylim(0, clipping_max_norm + 2)
-
-        ax_grad.set_title("TRAINING RUN: GRAD NORM")
-        ax_grad.set_xlabel("GLOBAL STEP")
-        ax_grad.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax_grad.set_ylabel("GRAD NORM (L2, PRE-CLIP)")
-
-        ax_grad.legend(
-            loc="upper right",
-            handlelength=2.0,
-            handletextpad=0.6,
-        )
-
-        fig_grad.tight_layout(rect=(0, 0.15, 1, 1))
-        grad_image_file = run_dir / "grad-norm-chart.png"
-        fig_grad.savefig(grad_image_file, bbox_inches="tight")
-        plt.close(fig_grad)
-
-    # --- Chart 3: Learning Rate ---
+    # --- Chart 2: Learning Rate ---
 
     if learning_rates:
         fig_lr, ax_lr = plt.subplots(figsize=(8, 6), dpi=100)
