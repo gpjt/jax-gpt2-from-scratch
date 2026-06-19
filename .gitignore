@@ -3,6 +3,8 @@ runs/*/checkpoints
 runs/*/loss-chart.png
 runs/*/grad-norm-chart.png
 runs/*/learning-rate-chart.png
+runs/checkpoint-load-and-restore/learning-rate-chart-first-cut.png
+runs/checkpoint-load-and-restore/loss-chart-first-cut.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

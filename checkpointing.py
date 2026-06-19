@@ -90,3 +90,15 @@ def load_checkpoint(run_dir, checkpoint, model, optimizer=None):
 
     load_model(model, checkpoint_dir / "model.safetensors")
 
+    if optimizer is not None:
+        optimizer.opt_state = ocp.load_pytree(checkpoint_dir / "optimizer", optimizer.opt_state)
+
+    with open(checkpoint_dir / "meta.json", "r") as f:
+        meta = json.load(f)
+        restart_global_step = meta["global_step"] + 1
+
+    with open(checkpoints_dir / "best" / "meta.json") as f:
+        best_loss = json.load(f)["avg_train_loss"]
+
+    return restart_global_step, best_loss
+

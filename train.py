@@ -21,7 +21,7 @@ import optax
 from flax import nnx
 from safetensors.flax import load_file
 
-from checkpointing import get_checkpoints_dir, save_checkpoint
+from checkpointing import get_checkpoints_dir, load_checkpoint, save_checkpoint
 from gpt import GPTModel
 
 
@@ -256,7 +256,7 @@ def train(
     train_dataset,
     rank, world_size,
     gradient_accumulation_steps,
-    start_global_step,
+    start_global_step, best_loss,
     checkpoint_interval,
 ):
     model_device = jax.devices()[0]
@@ -268,7 +268,6 @@ def train(
         disable=(rank != 0)
     )
 
-    best_loss = None
     train_losses = []
     tokens_seen_this_rank = 0
     start_time = time.time()
@@ -338,7 +337,8 @@ def train(
 @click.command()
 @click.argument("run")
 @click.argument("datasets_dir_path")
-def main(run, datasets_dir_path):
+@click.argument("checkpoint", default=None)
+def main(run, datasets_dir_path, checkpoint):
     run_dir = Path(__file__).resolve().parent / "runs" / run
     if not run_dir.is_dir():
         raise Exception(f"Could not find run dir {run_dir}")
@@ -395,7 +395,7 @@ def main(run, datasets_dir_path):
     total_steps = (len(train_dataset) // world_size) // gradient_accumulation_steps
     warmup_steps = (total_steps * train_conf["warmup_period_percent"]) // 100
     learning_rate = train_conf["learning_rate"]
-    schedule = optax.warmup_cosine_decay_schedule(
+    scheduler = optax.warmup_cosine_decay_schedule(
         init_value=learning_rate * 0.00001,
         peak_value=learning_rate,
         warmup_steps=warmup_steps,
@@ -406,7 +406,7 @@ def main(run, datasets_dir_path):
     optax_optimizer = optax.chain(
         optax.clip_by_global_norm(train_conf["clipping_max_norm"]),
         optax.inject_hyperparams(optax.adamw)(
-            learning_rate=schedule,
+            learning_rate=scheduler,
             weight_decay=train_conf["weight_decay"],
         )
     )
@@ -433,8 +433,15 @@ def main(run, datasets_dir_path):
             .item()
         )
 
+    if checkpoint is not None:
+        start_global_step, best_loss = load_checkpoint(
+            run_dir, checkpoint, model, optimizer
+        )
+    else:
+        start_global_step = 0
+        best_loss = None
+
     log("Start train")
-    start_global_step = 0  ## checkpointing
     train(
         run_dir,
         model, optimizer,
@@ -442,7 +449,7 @@ def main(run, datasets_dir_path):
         train_dataset,
         rank, world_size,
         gradient_accumulation_steps,
-        start_global_step,
+        start_global_step, best_loss,
         train_conf["checkpoint_interval"],
     )
     log("Done")
