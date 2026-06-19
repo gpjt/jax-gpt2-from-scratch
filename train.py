@@ -106,9 +106,6 @@ def get_training_data(run_dir):
     min_train_losses = []
     max_train_losses = []
     avg_train_losses = []
-    max_grad_norms = []
-    avg_grad_norms = []
-    frac_clipped = []
     best_global_step = None
     for item in checkpoints_dir.iterdir():
         if item.name == "latest":
@@ -129,9 +126,6 @@ def get_training_data(run_dir):
     min_train_losses.sort(key=lambda x: x[0])
     max_train_losses.sort(key=lambda x: x[0])
     avg_train_losses.sort(key=lambda x: x[0])
-    max_grad_norms.sort(key=lambda x: x[0])
-    avg_grad_norms.sort(key=lambda x: x[0])
-    frac_clipped.sort(key=lambda x: x[0])
 
     return (
         learning_rates,
