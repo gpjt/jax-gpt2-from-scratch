@@ -9,6 +9,9 @@ from tqdm import tqdm
 
 from huggingface_hub import snapshot_download
 
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.ticker import MaxNLocator
