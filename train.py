@@ -1,4 +1,5 @@
 import json
+import math
 import time
 from datetime import datetime
 from pathlib import Path
@@ -408,9 +409,12 @@ def main(run, datasets_dir_path):
     )
     optimizer = nnx.Optimizer(
         model,
-        optax.MultiSteps(
-            optax_optimizer,
-            every_k_schedule=gradient_accumulation_steps
+        optax.apply_if_finite(
+            optax.MultiSteps(
+                optax_optimizer,
+                every_k_schedule=gradient_accumulation_steps
+            ),
+            max_consecutive_errors=math.inf,
         ),
         wrt=nnx.Param
     )
@@ -419,6 +423,7 @@ def main(run, datasets_dir_path):
         return (
             optimizer
             .opt_state
+            .inner_state
             .inner_opt_state[1]
             .hyperparams["learning_rate"]
             .get_value()
