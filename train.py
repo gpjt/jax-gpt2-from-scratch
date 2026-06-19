@@ -307,6 +307,7 @@ def train_step(model, optimizer, inputs, targets):
 def train(
     run_dir,
     model, optimizer,
+    get_learning_rate,
     train_dataset,
     rank, world_size,
     gradient_accumulation_steps,
@@ -339,9 +340,6 @@ def train(
             microbatch_size, sequence_length = inputs.shape
             tokens_seen_this_rank += microbatch_size * sequence_length
 
-
-        current_learning_rate = optimizer.opt_state.inner_opt_state.hyperparams["learning_rate"].get_value().item()
-
         is_checkpoint_iter = (
             (global_step % checkpoint_interval == 0)
             or (global_step == total_global_steps - 1)
@@ -360,6 +358,7 @@ def train(
                 else:
                     is_best = False
 
+                current_learning_rate = get_learning_rate()
                 save_checkpoint(
                     run_dir,
                     f"iteration-{global_step}",
@@ -459,9 +458,12 @@ def main(run, datasets_dir_path):
         end_value=learning_rate / 10,
     )
 
-    optax_optimizer = optax.inject_hyperparams(optax.adamw)(
-        learning_rate=schedule,
-        weight_decay=train_conf["weight_decay"],
+    optax_optimizer = optax.chain(
+        optax.clip_by_global_norm(train_conf["clipping_max_norm"]),
+        optax.inject_hyperparams(optax.adamw)(
+            learning_rate=schedule,
+            weight_decay=train_conf["weight_decay"],
+        )
     )
     optimizer = nnx.Optimizer(
         model,
@@ -472,11 +474,22 @@ def main(run, datasets_dir_path):
         wrt=nnx.Param
     )
 
+    def get_learning_rate():
+        return (
+            optimizer
+            .opt_state
+            .inner_opt_state[1]
+            .hyperparams["learning_rate"]
+            .get_value()
+            .item()
+        )
+
     log("Start train")
     start_global_step = 0  ## checkpointing
     train(
         run_dir,
         model, optimizer,
+        get_learning_rate,
         train_dataset,
         rank, world_size,
         gradient_accumulation_steps,
