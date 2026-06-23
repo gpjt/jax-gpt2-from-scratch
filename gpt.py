@@ -80,6 +80,11 @@ class GPTModel(nnx.Module):
             features=emb_dim,
             rngs=rngs,
         )
+        self.position_embedding = nnx.Embed(
+            num_embeddings=context_length,
+            features=emb_dim,
+            rngs=rngs,
+        )
 
         self.transformers_layer = TransformersLayer(emb_dim, qkv_bias, rngs)
 
@@ -94,7 +99,10 @@ class GPTModel(nnx.Module):
 
 
     def __call__(self, xs):
-        input_embeddings = self.token_embedding(xs)
+        token_embeddings = self.token_embedding(xs)
+        b, n = xs.shape
+        position_embeddings = self.position_embedding(jnp.arange(n))
+        input_embeddings = token_embeddings + position_embeddings
 
         transformed = self.transformers_layer(input_embeddings)
 
