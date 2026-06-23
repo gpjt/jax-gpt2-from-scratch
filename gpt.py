@@ -102,12 +102,29 @@ class TransformersLayer(nnx.Module):
 
     def __init__(self, d_emb, n_heads, d_qk, d_v, qkv_bias, rngs):
         self.attention = MultiHeadAttention(d_emb, n_heads, d_qk, d_v, qkv_bias, rngs)
+        self.ffn = nnx.Sequential(
+            nnx.Linear(
+                in_features=d_emb,
+                out_features=d_emb * 4,
+                use_bias=True,
+                rngs=rngs
+            ),
+            jax.nn.gelu,
+            nnx.Linear(
+                in_features=d_emb * 4,
+                out_features=d_emb,
+                use_bias=True,
+                rngs=rngs
+            ),
+        )
 
 
     def __call__(self, xs):
         shortcut = xs
         att = self.attention(xs)
-        return shortcut + att
+        post_attention = shortcut + att
+        fed_forward = self.ffn(post_attention)
+        return fed_forward + post_attention
 
 
 
