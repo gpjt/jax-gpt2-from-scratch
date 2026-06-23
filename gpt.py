@@ -54,12 +54,14 @@ class Attention(nnx.Module):
 class TransformersLayer(nnx.Module):
 
     def __init__(self, emb_dim, qkv_bias, rngs):
+        self.pre_attention_norm = LayerNorm(emb_dim)
         self.attention = Attention(emb_dim, qkv_bias, rngs)
 
 
     def __call__(self, xs):
         shortcut = xs
-        att = self.attention(xs)
+        pre_attention_normed = self.pre_attention_norm(xs)
+        att = self.attention(pre_attention_normed)
         return shortcut + att
 
 
