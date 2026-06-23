@@ -44,7 +44,7 @@ class BigTrainDataset:
 
     def __init__(self, all_tokens, seq_length, microbatch_size):
         self.xs = all_tokens[:-1].reshape(-1, microbatch_size, seq_length)
-        self.ys = all_tokens[:-1].reshape(-1, microbatch_size, seq_length)
+        self.ys = all_tokens[1:].reshape(-1, microbatch_size, seq_length)
 
     def __getitem__(self, ix):
         return self.xs[ix], self.ys[ix]
