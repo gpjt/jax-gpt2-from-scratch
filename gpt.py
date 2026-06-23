@@ -21,40 +21,87 @@ class LayerNorm(nnx.Module):
 
 
 
-class Attention(nnx.Module):
+class MultiHeadAttention(nnx.Module):
 
-    def __init__(self, emb_dim, qkv_bias, rngs):
-        self.d_qk = emb_dim
+    def __init__(self, d_emb, n_heads, d_qk, d_v, qkv_bias, rngs):
+        self.n_heads = n_heads
+        self.d_qk = d_qk
+        self.d_v = d_v
 
-        self.W_q = nnx.Linear(emb_dim, self.d_qk, use_bias=qkv_bias, rngs=rngs)
-        self.W_k = nnx.Linear(emb_dim, self.d_qk, use_bias=qkv_bias, rngs=rngs)
-        self.W_v = nnx.Linear(emb_dim, self.d_qk, use_bias=qkv_bias, rngs=rngs)
+        self.W_q = nnx.Linear(d_emb, self.d_qk * n_heads, use_bias=qkv_bias, rngs=rngs)
+        self.W_k = nnx.Linear(d_emb, self.d_qk * n_heads, use_bias=qkv_bias, rngs=rngs)
+        self.W_v = nnx.Linear(d_emb, self.d_v * n_heads, use_bias=qkv_bias, rngs=rngs)
+
+        self.output_projection = nnx.Linear(self.d_v * n_heads, d_emb, use_bias=False, rngs=rngs)
 
 
     def __call__(self, xs):
-        Q = self.W_q(xs)
-        K = self.W_k(xs)
-        V = self.W_v(xs)
+        batch_size, len_sequence, d_emb = xs.shape
 
-        omega = Q @ jnp.transpose(K, axes=(0, 2, 1))
+        # For each of the below:
+        # * The initial linear layer projects them to
+        #   (batch_size, len_sequence, d_X * n_heads)
+        #   where X is qk or v as appropriate.
+        # * The reshape makes them (batch_size, len_sequence, n_heads, d_X)
+        # * The transpose makes them (batch_size, n_heads, len_sequence, d_X)
+        Q = jnp.transpose(
+            self.W_q(xs).reshape(
+                (batch_size, len_sequence, self.n_heads, self.d_qk)
+            ),
+            (0, 2, 1, 3)
+        )
+        K = jnp.transpose(
+            self.W_k(xs).reshape(
+                (batch_size, len_sequence, self.n_heads, self.d_qk)
+            ),
+            (0, 2, 1, 3)
+        )
+        V = jnp.transpose(
+            self.W_v(xs).reshape(
+                (batch_size, len_sequence, self.n_heads, self.d_v)
+            ),
+            (0, 2, 1, 3)
+        )
+
+        # Q and K are (batch_size, n_heads, len_sequence, d_qk) per above
+        # We need K to be (batch_size, n_heads, d_qk, len_sequence)
+        # and then we get omega (batch_size, n_heads, len_sequence, len_sequence)
+        omega = Q @ jnp.transpose(K, axes=(0, 1, 3, 2))
 
         omega /= jnp.sqrt(self.d_qk)
 
         causal_mask = jnp.ones_like(omega, dtype=bool)
+        # tril treats all but the last two axes as batches so we're OK here.
         causal_mask = jnp.tril(causal_mask)
 
         causal_omega = jnp.where(causal_mask, omega, -jnp.inf)
 
+        # last axis is still OK.
         attention_weights = jax.nn.softmax(causal_omega, axis=-1)
 
-        return attention_weights @ V
+        # attention_weights is (batch_size, n_heads, len_sequence, len_sequence)
+        # V is (batch_size, n_heads, len_sequence, d_v)
+        # So this will come out as (batch_size, n_heads, len_sequence, d_v)
+        weighted = attention_weights @ V
+
+        # Transpose to (batch_size, len_sequence, n_heads, d_v),
+        # then reshape to (batch_size, len_sequence, n_heads * d_v)
+        striped_output = jnp.transpose(
+            weighted,
+            (0, 2, 1, 3)
+        ).reshape(
+            batch_size, len_sequence, self.n_heads * self.d_v
+        )
+
+        # Final linear layer to combine
+        return self.output_projection(striped_output)
 
 
 
 class TransformersLayer(nnx.Module):
 
-    def __init__(self, emb_dim, qkv_bias, rngs):
-        self.attention = Attention(emb_dim, qkv_bias, rngs)
+    def __init__(self, d_emb, n_heads, d_qk, d_v, qkv_bias, rngs):
+        self.attention = MultiHeadAttention(d_emb, n_heads, d_qk, d_v, qkv_bias, rngs)
 
 
     def __call__(self, xs):
@@ -69,29 +116,32 @@ class GPTModel(nnx.Module):
     def __init__(
         self,
         vocab_size, context_length,
-        emb_dim,
-        n_heads, n_layers,
+        d_emb,
+        n_heads, d_qk, d_v,
+        n_layers,
         qkv_bias,
         drop_rate,
         rngs,
     ):
         self.token_embedding = nnx.Embed(
             num_embeddings=vocab_size,
-            features=emb_dim,
+            features=d_emb,
             rngs=rngs,
         )
         self.position_embedding = nnx.Embed(
             num_embeddings=context_length,
-            features=emb_dim,
+            features=d_emb,
             rngs=rngs,
         )
 
-        self.transformers_layer = TransformersLayer(emb_dim, qkv_bias, rngs)
+        self.transformers_layer = TransformersLayer(
+            d_emb, n_heads, d_qk, d_v, qkv_bias, rngs
+        )
 
-        self.output_norm = LayerNorm(emb_dim)
+        self.output_norm = LayerNorm(d_emb)
 
         self.output_head = nnx.Linear(
-            in_features=emb_dim,
+            in_features=d_emb,
             out_features=vocab_size,
             use_bias=False,
             rngs=rngs,

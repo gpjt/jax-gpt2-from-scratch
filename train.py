@@ -373,12 +373,16 @@ def main(run, datasets_dir_path, checkpoint):
     )
 
     log("Creating model")
+    d_qk = model_conf["emb_dim"] // model_conf["n_heads"]
+    d_v = d_qk
+
     rngs = nnx.Rngs(42)
     model = GPTModel(
         vocab_size=model_conf["vocab_size"],
         context_length=model_conf["context_length"],
-        emb_dim=model_conf["emb_dim"],
+        d_emb=model_conf["emb_dim"],
         n_heads=model_conf["n_heads"],
+        d_qk=d_qk, d_v=d_v,
         n_layers=model_conf["n_layers"],
         qkv_bias=model_conf["qkv_bias"],
         drop_rate=train_conf["drop_rate"],
