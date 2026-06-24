@@ -101,7 +101,10 @@ class MultiHeadAttention(nnx.Module):
 class TransformersLayer(nnx.Module):
 
     def __init__(self, d_emb, n_heads, d_qk, d_v, qkv_bias, rngs):
+        self.attention_norm = LayerNorm(d_emb)
         self.attention = MultiHeadAttention(d_emb, n_heads, d_qk, d_v, qkv_bias, rngs)
+
+        self.ffn_norm = LayerNorm(d_emb)
         self.ffn = nnx.Sequential(
             nnx.Linear(
                 in_features=d_emb,
@@ -121,10 +124,14 @@ class TransformersLayer(nnx.Module):
 
     def __call__(self, xs):
         shortcut = xs
-        att = self.attention(xs)
-        post_attention = shortcut + att
-        fed_forward = self.ffn(post_attention)
-        return fed_forward + post_attention
+        xs = self.attention_norm(xs)
+        xs = self.attention(xs)
+        xs = xs + shortcut
+
+        shortcut = xs
+        xs = self.ffn_norm(xs)
+        xs = self.ffn(xs)
+        return xs + shortcut
 
 
 
