@@ -151,8 +151,13 @@ class GPTModel(nnx.Module):
             rngs=rngs,
         )
 
-        self.transformers_layer = TransformersLayer(
-            d_emb, n_heads, d_qk, d_v, qkv_bias, rngs
+        self.transformers_layers = nnx.Sequential(
+            *(
+                TransformersLayer(
+                    d_emb, n_heads, d_qk, d_v, qkv_bias, rngs
+                )
+                for _ in range(n_layers)
+            )
         )
 
         self.output_norm = LayerNorm(d_emb)
@@ -171,7 +176,7 @@ class GPTModel(nnx.Module):
         position_embeddings = self.position_embedding(jnp.arange(n))
         input_embeddings = token_embeddings + position_embeddings
 
-        transformed = self.transformers_layer(input_embeddings)
+        transformed = self.transformers_layers(input_embeddings)
 
         normalized = self.output_norm(transformed)
 
