@@ -4,7 +4,7 @@
     "gradient_accumulation_steps": 16,
     "checkpoint_interval": 24,
     "dataset": "gpjt/fineweb-gpt2-tokens",
-    "min_train_tokens": 92160000,
+    "min_train_tokens": 184320000,
     "start_train_token": 0,
     "start_val_token": 0,
     "weight_decay": 0.01,
