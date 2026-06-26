@@ -42,8 +42,8 @@ def main(model_safetensors_file):
         n_heads=12, d_qk=64, d_v=64,
         n_layers=12,
         qkv_bias=False,
-        drop_rate=0.1,
         rngs=rngs,
+        drop_rate=None,
     )
     load_model(model, model_safetensors_file)
 

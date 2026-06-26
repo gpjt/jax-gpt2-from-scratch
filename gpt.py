@@ -23,7 +23,7 @@ class LayerNorm(nnx.Module):
 
 class MultiHeadAttention(nnx.Module):
 
-    def __init__(self, d_emb, n_heads, d_qk, d_v, qkv_bias, rngs):
+    def __init__(self, d_emb, n_heads, d_qk, d_v, qkv_bias, rngs, drop_rate=None):
         self.n_heads = n_heads
         self.d_qk = d_qk
         self.d_v = d_v
@@ -31,6 +31,11 @@ class MultiHeadAttention(nnx.Module):
         self.W_q = nnx.Linear(d_emb, self.d_qk * n_heads, use_bias=qkv_bias, rngs=rngs)
         self.W_k = nnx.Linear(d_emb, self.d_qk * n_heads, use_bias=qkv_bias, rngs=rngs)
         self.W_v = nnx.Linear(d_emb, self.d_v * n_heads, use_bias=qkv_bias, rngs=rngs)
+
+        if drop_rate is not None:
+            self.attention_weight_dropout = nnx.Dropout(rate=drop_rate, rngs=rngs)
+        else:
+            self.attention_weight_dropout = None
 
         self.output_projection = nnx.Linear(self.d_v * n_heads, d_emb, use_bias=False, rngs=rngs)
 
@@ -79,6 +84,11 @@ class MultiHeadAttention(nnx.Module):
         # last axis is still OK.
         attention_weights = jax.nn.softmax(causal_omega, axis=-1)
 
+        # Note that this can leave weights summing to >1.  I've left
+        # that in here to match the PyTorch code behaviour
+        if self.attention_weight_dropout is not None:
+            attention_weights = self.attention_weight_dropout(attention_weights)
+
         # attention_weights is (batch_size, n_heads, len_sequence, len_sequence)
         # V is (batch_size, n_heads, len_sequence, d_v)
         # So this will come out as (batch_size, n_heads, len_sequence, d_v)
@@ -100,9 +110,14 @@ class MultiHeadAttention(nnx.Module):
 
 class TransformersLayer(nnx.Module):
 
-    def __init__(self, d_emb, n_heads, d_qk, d_v, qkv_bias, rngs):
+    def __init__(self, d_emb, n_heads, d_qk, d_v, qkv_bias, rngs, drop_rate=None):
         self.attention_norm = LayerNorm(d_emb)
-        self.attention = MultiHeadAttention(d_emb, n_heads, d_qk, d_v, qkv_bias, rngs)
+        self.attention = MultiHeadAttention(d_emb, n_heads, d_qk, d_v, qkv_bias, rngs, drop_rate=drop_rate)
+
+        if drop_rate is not None:
+            self.dropout = nnx.Dropout(rate=drop_rate, rngs=rngs)
+        else:
+            self.dropout = None
 
         self.ffn_norm = LayerNorm(d_emb)
         self.ffn = nnx.Sequential(
@@ -126,11 +141,15 @@ class TransformersLayer(nnx.Module):
         shortcut = xs
         xs = self.attention_norm(xs)
         xs = self.attention(xs)
+        if self.dropout is not None:
+            xs = self.dropout(xs)
         xs = xs + shortcut
 
         shortcut = xs
         xs = self.ffn_norm(xs)
         xs = self.ffn(xs)
+        if self.dropout is not None:
+            xs = self.dropout(xs)
         return xs + shortcut
 
 
@@ -144,8 +163,8 @@ class GPTModel(nnx.Module):
         n_heads, d_qk, d_v,
         n_layers,
         qkv_bias,
-        drop_rate,
         rngs,
+        drop_rate=None,
     ):
         self.token_embedding = nnx.Embed(
             num_embeddings=vocab_size,
@@ -158,10 +177,16 @@ class GPTModel(nnx.Module):
             rngs=rngs,
         )
 
+        if drop_rate is not None:
+            self.embedding_dropout = nnx.Dropout(rate=drop_rate, rngs=rngs)
+        else:
+            self.embedding_dropout = None
+
         self.transformers_layers = nnx.Sequential(
             *(
                 TransformersLayer(
-                    d_emb, n_heads, d_qk, d_v, qkv_bias, rngs
+                    d_emb, n_heads, d_qk, d_v, qkv_bias, rngs,
+                    drop_rate=drop_rate,
                 )
                 for _ in range(n_layers)
             )
@@ -182,6 +207,9 @@ class GPTModel(nnx.Module):
         b, n = xs.shape
         position_embeddings = self.position_embedding(jnp.arange(n))
         input_embeddings = token_embeddings + position_embeddings
+
+        if self.embedding_dropout is not None:
+            input_embeddings = self.embedding_dropout(input_embeddings)
 
         transformed = self.transformers_layers(input_embeddings)
 
