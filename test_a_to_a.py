@@ -39,10 +39,11 @@ def main(model_safetensors_file):
     model = GPTModel(
         vocab_size=tokenizer.n_vocab,
         context_length=1024,
-        emb_dim=768,
-        n_heads=12, n_layers=12,
+        d_emb=768,
+        n_heads=12, d_qk=64, d_v=64,
+        n_layers=12,
         qkv_bias=False,
-        drop_rate=0.1,
+        drop_rate=0.0,
         rngs=rngs,
     )
     load_model(model, model_safetensors_file)
