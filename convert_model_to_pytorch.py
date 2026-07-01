@@ -3,6 +3,8 @@ from pathlib import Path
 
 import click
 
+from jax import numpy as jnp
+
 from safetensors.flax import load_file, save_file
 
 
@@ -12,37 +14,34 @@ MAPPINGS = [
     (r"output_norm\.scale", "final_norm.scale", lambda x: x.squeeze((0, 1))),
     (r"position_embedding\.embedding", "pos_emb.weight", lambda x: x),
     (r"token_embedding\.embedding", "tok_emb.weight", lambda x: x),
-    (r"transformers_layers\.layers\.(\d+)\.attention\.W_k\.kernel", "trf_blocks.{group1}.att.W_key.weight", lambda x: x.T),
-    (r"transformers_layers\.layers\.(\d+)\.attention\.W_q\.kernel", "trf_blocks.{group1}.att.W_query.weight", lambda x: x.T),
-    (r"transformers_layers\.layers\.(\d+)\.attention\.W_v\.kernel", "trf_blocks.{group1}.att.W_value.weight", lambda x: x.T),
-    (r"transformers_layers\.layers\.(\d+)\.attention\.output_projection\.kernel", "trf_blocks.{group1}.att.out_proj.weight", lambda x: x.T),
-    (r"transformers_layers\.layers\.(\d+)\.attention_norm\.bias", "trf_blocks.{group1}.norm1.shift", lambda x: x.squeeze((0, 1))),
-    (r"transformers_layers\.layers\.(\d+)\.attention_norm\.scale", "trf_blocks.{group1}.norm1.scale", lambda x: x.squeeze((0, 1))),
-    (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.0\.bias", "trf_blocks.{group1}.ff.layers.0.bias", lambda x: x),
-    (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.0\.kernel", "trf_blocks.{group1}.ff.layers.0.weight", lambda x: x.T),
-    (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.2\.bias", "trf_blocks.{group1}.ff.layers.2.bias", lambda x: x),
-    (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.2\.kernel", "trf_blocks.{group1}.ff.layers.2.weight", lambda x: x.T),
-    (r"transformers_layers\.layers\.(\d+)\.ffn_norm\.scale", "trf_blocks.{group1}.norm2.scale", lambda x: x.squeeze((0, 1))),
-    (r"transformers_layers\.layers\.(\d+)\.ffn_norm\.bias", "trf_blocks.{group1}.norm2.shift", lambda x: x.squeeze((0, 1))),
+    (r"transformers_layers\.layers\.(\d+)\.attention\.W_k\.kernel", "trf_blocks.{layer}.att.W_key.weight", lambda x: x.T),
+    (r"transformers_layers\.layers\.(\d+)\.attention\.W_q\.kernel", "trf_blocks.{layer}.att.W_query.weight", lambda x: x.T),
+    (r"transformers_layers\.layers\.(\d+)\.attention\.W_v\.kernel", "trf_blocks.{layer}.att.W_value.weight", lambda x: x.T),
+    (r"transformers_layers\.layers\.(\d+)\.attention\.output_projection\.kernel", "trf_blocks.{layer}.att.out_proj.weight", lambda x: x.T),
+    (r"transformers_layers\.layers\.(\d+)\.attention_norm\.bias", "trf_blocks.{layer}.norm1.shift", lambda x: x.squeeze((0, 1))),
+    (r"transformers_layers\.layers\.(\d+)\.attention_norm\.scale", "trf_blocks.{layer}.norm1.scale", lambda x: x.squeeze((0, 1))),
+    (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.0\.bias", "trf_blocks.{layer}.ff.layers.0.bias", lambda x: x),
+    (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.0\.kernel", "trf_blocks.{layer}.ff.layers.0.weight", lambda x: x.T),
+    (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.2\.bias", "trf_blocks.{layer}.ff.layers.2.bias", lambda x: x),
+    (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.2\.kernel", "trf_blocks.{layer}.ff.layers.2.weight", lambda x: x.T),
+    (r"transformers_layers\.layers\.(\d+)\.ffn_norm\.scale", "trf_blocks.{layer}.norm2.scale", lambda x: x.squeeze((0, 1))),
+    (r"transformers_layers\.layers\.(\d+)\.ffn_norm\.bias", "trf_blocks.{layer}.norm2.shift", lambda x: x.squeeze((0, 1))),
 ]
 
 
 def convert(key, value):
-    print(key)
-
+    layer = None
     for in_re, out_format, converter in MAPPINGS:
         match = re.compile(in_re).match(key)
         if match is not None:
-            print("MATCH")
             if len(match.groups()) == 0:
                 result = out_format
             else:
-                result = out_format.format(group1=match.group(1))
-            print(f"RESULT {result}")
-            return result, converter(value)
+                layer = match.group(1)
+                result = out_format.format(layer=layer)
+            return result, converter(value), layer
 
-    raise Exception(key)
-    return ""
+    raise Exception(f"Unrecognised key {key}")
 
 
 @click.command()
@@ -60,9 +59,18 @@ def main(input_model_safetensors, output_model_safetensors):
     input_tensors = load_file(input_model_safetensors)
 
     output_tensors = {}
+    layers = set()
     for key, tensor in input_tensors.items():
-        converted_key, converted_tensor = convert(key, tensor)
+        if key == "position_embedding.embedding":
+            context_length, _ = tensor.shape
+        converted_key, converted_tensor, layer = convert(key, tensor)
         output_tensors[converted_key] = converted_tensor
+        if layer is not None:
+            layers.add(layer)
+
+    for layer in layers:
+        att_mask = jnp.triu(jnp.ones((context_length, context_length)), k=1)
+        output_tensors[f"trf_blocks.{layer}.att.mask"] = att_mask
 
     save_file(output_tensors, output_model_safetensors)
 
