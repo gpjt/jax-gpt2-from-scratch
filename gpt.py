@@ -37,7 +37,7 @@ class MultiHeadAttention(nnx.Module):
         else:
             self.attention_weight_dropout = None
 
-        self.output_projection = nnx.Linear(self.d_v * n_heads, d_emb, use_bias=False, rngs=rngs)
+        self.output_projection = nnx.Linear(self.d_v * n_heads, d_emb, use_bias=True, rngs=rngs)
 
 
     def __call__(self, xs):
