@@ -36,7 +36,8 @@ def save_checkpoint(
     simple_dict = {}
     for tuple_key, array in flat_state:
         key = ".".join(str(key) for key in tuple_key)
-        simple_dict[key] = array
+        if "dropout" not in key:
+            simple_dict[key] = array
 
     save_file(simple_dict, checkpoint_dir / "model.safetensors")
 
