@@ -18,6 +18,7 @@ MAPPINGS = [
     (r"transformers_layers\.layers\.(\d+)\.attention\.W_q\.kernel", "trf_blocks.{layer}.att.W_query.weight", lambda x: x.T),
     (r"transformers_layers\.layers\.(\d+)\.attention\.W_v\.kernel", "trf_blocks.{layer}.att.W_value.weight", lambda x: x.T),
     (r"transformers_layers\.layers\.(\d+)\.attention\.output_projection\.kernel", "trf_blocks.{layer}.att.out_proj.weight", lambda x: x.T),
+    (r"transformers_layers\.layers\.(\d+)\.attention\.output_projection\.bias", "trf_blocks.{layer}.att.out_proj.bias", lambda x: x.T),
     (r"transformers_layers\.layers\.(\d+)\.attention_norm\.bias", "trf_blocks.{layer}.norm1.shift", lambda x: x.squeeze((0, 1))),
     (r"transformers_layers\.layers\.(\d+)\.attention_norm\.scale", "trf_blocks.{layer}.norm1.scale", lambda x: x.squeeze((0, 1))),
     (r"transformers_layers\.layers\.(\d+)\.ffn\.layers\.0\.bias", "trf_blocks.{layer}.ff.layers.0.bias", lambda x: x),
