@@ -385,7 +385,7 @@ def main(run, datasets_dir_path, checkpoint):
         d_qk=d_qk, d_v=d_v,
         n_layers=model_conf["n_layers"],
         qkv_bias=model_conf["qkv_bias"],
-        drop_rate=train_conf["drop_rate"],
+        drop_rate=train_conf.get("drop_rate"),
         rngs=rngs,
     )
 
