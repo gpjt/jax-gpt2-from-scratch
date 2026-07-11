@@ -69,7 +69,7 @@ class MultiHeadAttention(nnx.Module):
         )
 
         # Q and K are (batch_size, n_heads, len_sequence, d_qk) per above
-        # We need K to be (batch_size, n_heads, d_qk, len_sequence)
+        # We need to convert K to (batch_size, n_heads, d_qk, len_sequence)
         # and then we get omega (batch_size, n_heads, len_sequence, len_sequence)
         omega = Q @ jnp.transpose(K, axes=(0, 1, 3, 2))
 
