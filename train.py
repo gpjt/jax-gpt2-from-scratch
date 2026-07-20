@@ -248,6 +248,7 @@ def train(
     model, optimizer,
     get_learning_rate,
     train_dataset,
+    epochs,
     rank, world_size,
     gradient_accumulation_steps,
     start_global_step, best_loss,
@@ -255,7 +256,8 @@ def train(
 ):
     model_device = jax.devices()[0]
 
-    total_global_steps = (len(train_dataset) // world_size) // gradient_accumulation_steps
+    steps_per_epoch = (len(train_dataset) // world_size) // gradient_accumulation_steps
+    total_global_steps = steps_per_epoch * epochs
 
     progress_bar = tqdm(
         range(start_global_step, total_global_steps),
@@ -268,7 +270,8 @@ def train(
 
     for global_step in progress_bar:
         for accumulation_step in range(gradient_accumulation_steps):
-            inputs, targets = train_dataset[((global_step * gradient_accumulation_steps) + accumulation_step) * world_size + rank]
+            epoch_step = global_step % steps_per_epoch
+            inputs, targets = train_dataset[((epoch_step * gradient_accumulation_steps) + accumulation_step) * world_size + rank]
             inputs = jax.device_put(inputs, model_device)
             targets = jax.device_put(targets, model_device)
 
@@ -350,6 +353,7 @@ def main(run, datasets_dir_path, checkpoint):
         train_conf = json.load(f)
 
     gradient_accumulation_steps = train_conf.get("gradient_accumulation_steps")
+    epochs = train_conf.get("epochs", 1)
 
     log("Downloading dataset")
     datasets_dir = Path(datasets_dir_path)
@@ -390,7 +394,7 @@ def main(run, datasets_dir_path, checkpoint):
     )
 
     log("Creating optimizer")
-    total_steps = (len(train_dataset) // world_size) // gradient_accumulation_steps
+    total_steps = ((len(train_dataset) // world_size) // gradient_accumulation_steps) * epochs
     warmup_steps = (total_steps * train_conf["warmup_period_percent"]) // 100
     learning_rate = train_conf["learning_rate"]
     scheduler = optax.warmup_cosine_decay_schedule(
@@ -445,6 +449,7 @@ def main(run, datasets_dir_path, checkpoint):
         model, optimizer,
         get_learning_rate,
         train_dataset,
+        epochs,
         rank, world_size,
         gradient_accumulation_steps,
         start_global_step, best_loss,
