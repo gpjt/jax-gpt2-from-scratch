@@ -1,3 +1,4 @@
+import json
 from functools import partial
 
 import click
@@ -30,20 +31,28 @@ def generate(model, seed_tokens, tokens_to_generate):
 
 
 @click.command()
+@click.argument("model_conf_file")
 @click.argument("model_safetensors_file")
-def main(model_safetensors_file):
+def main(model_conf_file, model_safetensors_file):
+    with open(model_conf_file, "r") as f:
+        model_conf = json.load(f)
+
     tokenizer = tiktoken.get_encoding("gpt2")
+
+    d_qk = model_conf["emb_dim"] // model_conf["n_heads"]
+    d_v = d_qk
 
     rngs = nnx.Rngs(43)
     model = GPTModel(
-        vocab_size=tokenizer.n_vocab,
-        context_length=1024,
-        d_emb=768,
-        n_heads=12, d_qk=64, d_v=64,
-        n_layers=12,
-        qkv_bias=False,
-        rngs=rngs,
+        vocab_size=model_conf["vocab_size"],
+        context_length=model_conf["context_length"],
+        d_emb=model_conf["emb_dim"],
+        n_heads=model_conf["n_heads"],
+        d_qk=d_qk, d_v=d_v,
+        n_layers=model_conf["n_layers"],
+        qkv_bias=model_conf["qkv_bias"],
         drop_rate=None,
+        rngs=rngs,
     )
     load_model(model, model_safetensors_file)
 
